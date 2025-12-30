@@ -212,6 +212,7 @@
         <div class="drawer-section">
             <span class="label-text">Geometry</span>
             <div class="tool-grid">
+                <button class="drawer-btn" onclick="ToolsDrawer.addShape('square')">SQUARE</button>
                 <button class="drawer-btn" onclick="ToolsDrawer.addShape('rect')">RECT</button>
                 <button class="drawer-btn" onclick="ToolsDrawer.addShape('circle')">CIRC</button>
                 <button class="drawer-btn" onclick="ToolsDrawer.addShape('tri')">TRI</button>
@@ -282,7 +283,6 @@
         document.getElementById('loader').style.opacity = '0';
         setTimeout(() => document.getElementById('loader').remove(), 500);
         
-        // Inject Enhanced SVG Viewer Logic to override gallery.js
         GalleryUI.state = { scale: 1, x: 0, y: 0, lastDist: 0, lastX: 0, lastY: 0, isDragging: false, tapCount: 0, tapTimer: null };
         GalleryUI.viewFull = function(data) {
             const viewer = document.getElementById('full-viewer');
@@ -533,8 +533,15 @@
                 maxX = Math.max(maxX, s.a.x, s.b.x); maxY = Math.max(maxY, s.a.y, s.b.y);
             }
             if (s.type === 'shape') {
-                minX = Math.min(minX, s.x - s.size); minY = Math.min(minY, s.y - s.size);
-                maxX = Math.max(maxX, s.x + s.size); maxY = Math.max(maxY, s.y + s.size);
+                if(s.points) {
+                    s.points.forEach(p => {
+                        minX = Math.min(minX, p.x); minY = Math.min(minY, p.y);
+                        maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y);
+                    });
+                } else {
+                    minX = Math.min(minX, s.x - s.size); minY = Math.min(minY, s.y - s.size);
+                    maxX = Math.max(maxX, s.x + s.size); maxY = Math.max(maxY, s.y + s.size);
+                }
             }
         });
     
@@ -554,20 +561,14 @@
                     svgDefs += `<radialGradient id="${id}"><stop offset="0%" stop-color="${s.color}"/><stop offset="${core*100}%" stop-color="${s.color}"/><stop offset="100%" stop-color="${s.color}" stop-opacity="0"/></radialGradient>`;
                     s.points.forEach(p => { svgBody += `<circle cx="${p.x}" cy="${p.y}" r="${s.radius}" fill="url(#${id})" ${style} />`; });
                 } else if (s.type === 'shape') {
-                    const sz = s.size, x = s.x, y = s.y;
                     const shStyle = `fill="none" stroke="${s.color}" stroke-width="${s.thickness}" stroke-linecap="round" stroke-linejoin="round" ${style}`;
-                    if (s.shape === 'rect') svgBody += `<rect x="${x-sz/2}" y="${y-sz/2}" width="${sz}" height="${sz}" ${shStyle} />`;
-                    else if (s.shape === 'circle') svgBody += `<circle cx="${x}" cy="${y}" r="${sz/2}" ${shStyle} />`;
-                    else {
-                        let sides = (s.shape==='tri'?3:(s.shape==='hex'?6:(s.shape==='oct'?8:0))), pts=[];
-                        if (sides > 0) {
-                            for(let i=0;i<sides;i++) { const a=(i*2*Math.PI)/sides-Math.PI/2; pts.push(`${x+(sz/2)*Math.cos(a)},${y+(sz/2)*Math.sin(a)}`); }
-                            svgBody += `<polygon points="${pts.join(' ')}" ${shStyle} />`;
-                        } else if (s.shape === 'star') {
-                            let r=Math.PI/2*3, st=Math.PI/5;
-                            for(let i=0;i<5;i++) { pts.push(`${x+Math.cos(r)*sz/2},${y+Math.sin(r)*sz/2}`); r+=st; pts.push(`${x+Math.cos(r)*sz/5},${y+Math.sin(r)*sz/5}`); r+=st; }
-                            svgBody += `<polygon points="${pts.join(' ')}" ${shStyle} />`;
-                        }
+                    if (s.points) {
+                        let pts = s.points.map(p => `${p.x},${p.y}`).join(' ');
+                        svgBody += `<polygon points="${pts}" ${shStyle} />`;
+                    } else {
+                        const sz = s.size, x = s.x, y = s.y;
+                        if (s.shape === 'rect' || s.shape === 'square') svgBody += `<rect x="${x-sz/2}" y="${y-sz/2}" width="${sz}" height="${sz}" ${shStyle} />`;
+                        else if (s.shape === 'circle') svgBody += `<circle cx="${x}" cy="${y}" r="${sz/2}" ${shStyle} />`;
                     }
                 } else if (s.type === 'line') {
                     svgBody += `<line x1="${s.a.x}" y1="${s.a.y}" x2="${s.b.x}" y2="${s.b.y}" stroke="${s.color}" stroke-width="${s.thickness}" stroke-linecap="round" ${style}/>`;
