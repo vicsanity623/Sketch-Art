@@ -1,5 +1,5 @@
 /**
- * Tools.js - Advanced Vertex Geometry Engine
+ * Tools.js - Professional Advanced Canvas Utilities (Vertex + Shader Engine)
  */
 
 const ToolsDrawer = {
@@ -20,6 +20,7 @@ const ToolsDrawer = {
         setMode('advanced');
         this.activeTool = tool;
         this.liveElement = null;
+        this.currentShader = null;
         document.querySelectorAll('.drawer-btn').forEach(b => b.classList.remove('active'));
         const btn = document.getElementById(`tool-${tool}`);
         if(btn) btn.classList.add('active');
@@ -30,51 +31,23 @@ const ToolsDrawer = {
         this.activeTool = 'shape';
         const center = screenToWorld(window.innerWidth/2, window.innerHeight/2);
         const size = 150 / camera.zoom;
-        
-        // Initialize with default geometry
         this.liveElement = {
-            type: 'shape',
-            shape: shapeType,
-            x: center.x,
-            y: center.y,
-            size: size,
+            type: 'shape', shape: shapeType, x: center.x, y: center.y, size: size,
             thickness: document.getElementById('sizePicker').value / camera.zoom,
             color: document.getElementById('colorPicker').value,
-            editMode: 'transform', // 'transform' (center dot) or 'morph' (all dots)
+            editMode: 'transform',
             points: this.generateInitialPoints(shapeType, center.x, center.y, size)
         };
     },
 
     generateInitialPoints(type, cx, cy, sz) {
-        let pts = [];
-        const r = sz / 2;
-        if (type === 'square') {
-            pts = [{x:cx-r,y:cy-r}, {x:cx+r,y:cy-r}, {x:cx+r,y:cy+r}, {x:cx-r,y:cy+r}];
-        } else if (type === 'rect') {
-            pts = [{x:cx-r*1.5,y:cy-r}, {x:cx+r*1.5,y:cy-r}, {x:cx+r*1.5,y:cy+r}, {x:cx-r*1.5,y:cy+r}];
-        } else if (type === 'circle') {
-            for(let i=0; i<24; i++) {
-                const a = (i/24) * Math.PI * 2;
-                pts.push({x: cx + r*Math.cos(a), y: cy + r*Math.sin(a)});
-            }
-        } else if (type === 'tri') {
-            for(let i=0; i<3; i++) {
-                const a = (i/3) * Math.PI * 2 - Math.PI/2;
-                pts.push({x: cx + r*Math.cos(a), y: cy + r*Math.sin(a)});
-            }
-        } else if (type === 'star') {
-            let a = -Math.PI/2;
-            for(let i=0; i<5; i++) {
-                pts.push({x: cx + r*Math.cos(a), y: cy + r*Math.sin(a)}); a += Math.PI/5;
-                pts.push({x: cx + (r/2.5)*Math.cos(a), y: cy + (r/2.5)*Math.sin(a)}); a += Math.PI/5;
-            }
-        } else if (type === 'hex' || type === 'oct') {
-            const sides = type === 'hex' ? 6 : 8;
-            for(let i=0; i<sides; i++) {
-                const a = (i/sides) * Math.PI * 2 - Math.PI/2;
-                pts.push({x: cx + r*Math.cos(a), y: cy + r*Math.sin(a)});
-            }
-        }
+        let pts = []; const r = sz / 2;
+        if (type === 'square') pts = [{x:cx-r,y:cy-r}, {x:cx+r,y:cy-r}, {x:cx+r,y:cy+r}, {x:cx-r,y:cy+r}];
+        else if (type === 'rect') pts = [{x:cx-r*1.5,y:cy-r}, {x:cx+r*1.5,y:cy-r}, {x:cx+r*1.5,y:cy+r}, {x:cx-r*1.5,y:cy+r}];
+        else if (type === 'circle') for(let i=0; i<24; i++) { const a=(i/24)*Math.PI*2; pts.push({x:cx+r*Math.cos(a), y:cy+r*Math.sin(a)}); }
+        else if (type === 'tri') for(let i=0; i<3; i++) { const a=(i/3)*Math.PI*2-Math.PI/2; pts.push({x:cx+r*Math.cos(a), y:cy+r*Math.sin(a)}); }
+        else if (type === 'star') { let a=-Math.PI/2; for(let i=0;i<5;i++){ pts.push({x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)}); a+=Math.PI/5; pts.push({x:cx+(r/2.5)*Math.cos(a),y:cy+(r/2.5)*Math.sin(a)}); a+=Math.PI/5; }}
+        else if (type === 'hex' || type === 'oct') { const s=(type==='hex'?6:8); for(let i=0;i<s;i++){ const a=(i/s)*Math.PI*2-Math.PI/2; pts.push({x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)}); }}
         return pts;
     },
 
@@ -85,23 +58,34 @@ const ToolsDrawer = {
     }
 };
 
-// --- Specialized Renderers ---
+function drawShader(ctx, s) {
+    ctx.save();
+    ctx.globalAlpha = s.opacity;
+    const softness = s.smoothness / 100;
+    // Core remains solid, fade starts later for professional shading feel
+    const core = Math.max(0.01, 1 - softness); 
+    
+    s.points.forEach(p => {
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s.radius);
+        grad.addColorStop(0, s.color);
+        grad.addColorStop(core, s.color); 
+        grad.addColorStop(1, 'rgba(0,0,0,0)');
+        ctx.fillStyle = grad;
+        ctx.fillRect(p.x - s.radius, p.y - s.radius, s.radius * 2, s.radius * 2);
+    });
+    ctx.restore();
+}
+
 function drawStaticAdvanced(ctx, s) {
     if (s.type === 'shader') { drawShader(ctx, s); return; }
-    
     ctx.save();
-    ctx.strokeStyle = s.color;
-    ctx.lineWidth = s.thickness;
+    ctx.strokeStyle = s.color; ctx.lineWidth = s.thickness;
     ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-
     if (s.type === 'line') {
         ctx.beginPath(); ctx.moveTo(s.a.x, s.a.y); ctx.lineTo(s.b.x, s.b.y); ctx.stroke();
     } else if (s.type === 'shape' && s.points.length > 0) {
-        ctx.beginPath();
-        ctx.moveTo(s.points[0].x, s.points[0].y);
-        s.points.forEach(p => ctx.lineTo(p.x, p.y));
-        ctx.closePath();
-        ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(s.points[0].x, s.points[0].y);
+        s.points.forEach(p => ctx.lineTo(p.x, p.y)); ctx.closePath(); ctx.stroke();
     }
     ctx.restore();
 }
@@ -110,55 +94,29 @@ function drawAdvanced(ctx) {
     const el = ToolsDrawer.liveElement;
     if (!el) return;
     drawStaticAdvanced(ctx, el);
-
-    // Draw interaction handles based on mode
-    ctx.fillStyle = "white";
-    ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.5)";
+    ctx.fillStyle = "white"; ctx.shadowBlur = 10; ctx.shadowColor = "rgba(0,0,0,0.5)";
     const hR = 10 / camera.zoom;
-
     if (el.type === 'line') {
         ctx.beginPath(); ctx.arc(el.a.x, el.a.y, hR, 0, Math.PI*2); ctx.fill();
         ctx.beginPath(); ctx.arc(el.b.x, el.b.y, hR, 0, Math.PI*2); ctx.fill();
     } else if (el.type === 'shape') {
         if (el.editMode === 'transform') {
-            // Only center handle for moving/scaling
             ctx.beginPath(); ctx.arc(el.x, el.y, hR*1.5, 0, Math.PI*2); ctx.fill();
         } else {
-            // Vertex handles for morphing
-            el.points.forEach(p => {
-                ctx.beginPath(); ctx.arc(p.x, p.y, hR, 0, Math.PI*2); ctx.fill();
-            });
+            el.points.forEach(p => { ctx.beginPath(); ctx.arc(p.x, p.y, hR, 0, Math.PI*2); ctx.fill(); });
         }
     }
 }
 
-// --- Shader Rendering ---
-function drawShader(ctx, s) {
-    ctx.save();
-    ctx.globalAlpha = s.opacity;
-    s.points.forEach(p => {
-        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s.radius);
-        const core = 0.5 * (1 - s.smoothness / 100);
-        grad.addColorStop(0, s.color);
-        grad.addColorStop(Math.max(0.01, core), s.color);
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.fillStyle = grad;
-        ctx.fillRect(p.x - s.radius, p.y - s.radius, s.radius * 2, s.radius * 2);
-    });
-    ctx.restore();
-}
-
-// --- Touch Event Dispatcher ---
 canvas.addEventListener('touchstart', e => {
     if (mode !== 'advanced') return;
     const touch = e.touches[0];
     const pos = screenToWorld(touch.clientX, touch.clientY);
-    const grabR = 30 / camera.zoom;
+    const grabR = 40 / camera.zoom;
 
     ToolsDrawer.tapCount++;
     clearTimeout(ToolsDrawer.tapTimer);
     ToolsDrawer.tapTimer = setTimeout(() => {
-        // Mode switching logic
         if (ToolsDrawer.tapCount === 1 && ToolsDrawer.liveElement) {
             ToolsDrawer.liveElement.editMode = 'transform';
         } else if (ToolsDrawer.tapCount === 2 && ToolsDrawer.liveElement) {
@@ -169,12 +127,16 @@ canvas.addEventListener('touchstart', e => {
         ToolsDrawer.tapCount = 0;
     }, 300);
 
-    if (ToolsDrawer.activeTool === 'line' && ToolsDrawer.liveElement) {
-        const dA = Math.hypot(pos.x - ToolsDrawer.liveElement.a.x, pos.y - ToolsDrawer.liveElement.a.y);
-        const dB = Math.hypot(pos.x - ToolsDrawer.liveElement.b.x, pos.y - ToolsDrawer.liveElement.b.y);
-        if (dA < grabR) ToolsDrawer.liveElement.activePoint = 'a';
-        else if (dB < grabR) ToolsDrawer.liveElement.activePoint = 'b';
-        else ToolsDrawer.liveElement.activePoint = null;
+    if (ToolsDrawer.activeTool === 'line') {
+        if (!ToolsDrawer.liveElement) {
+            ToolsDrawer.liveElement = { type: 'line', a: {...pos}, b: {...pos}, thickness: document.getElementById('sizePicker').value/camera.zoom, color: document.getElementById('colorPicker').value, activePoint: 'b' };
+        } else {
+            const dA = Math.hypot(pos.x - ToolsDrawer.liveElement.a.x, pos.y - ToolsDrawer.liveElement.a.y);
+            const dB = Math.hypot(pos.x - ToolsDrawer.liveElement.b.x, pos.y - ToolsDrawer.liveElement.b.y);
+            if (dA < grabR) ToolsDrawer.liveElement.activePoint = 'a';
+            else if (dB < grabR) ToolsDrawer.liveElement.activePoint = 'b';
+            else ToolsDrawer.liveElement.activePoint = null;
+        }
     }
     
     if (ToolsDrawer.activeTool === 'shade') {
@@ -186,7 +148,6 @@ canvas.addEventListener('touchstart', e => {
         if (e.touches.length === 2) {
             ToolsDrawer.lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
         } else {
-            // Check for vertex grabbing in morph mode
             if (ToolsDrawer.liveElement.editMode === 'morph') {
                 ToolsDrawer.liveElement.activeVertexIdx = ToolsDrawer.liveElement.points.findIndex(p => Math.hypot(pos.x - p.x, pos.y - p.y) < grabR);
             } else {
@@ -216,18 +177,14 @@ canvas.addEventListener('touchmove', e => {
         if (e.touches.length === 2) {
             const dist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
             const scale = dist / ToolsDrawer.lastDist;
-            // Scale all points relative to center
             el.points.forEach(p => { p.x = el.x + (p.x - el.x) * scale; p.y = el.y + (p.y - el.y) * scale; });
-            el.size *= scale;
-            ToolsDrawer.lastDist = dist;
+            el.size *= scale; ToolsDrawer.lastDist = dist;
         } else {
             if (el.editMode === 'morph' && el.activeVertexIdx !== -1) {
                 el.points[el.activeVertexIdx] = {...pos};
             } else if (ToolsDrawer.isDragging) {
-                const dx = pos.x - ToolsDrawer.dragOffset.x - el.x;
-                const dy = pos.y - ToolsDrawer.dragOffset.y - el.y;
-                el.x += dx; el.y += dy;
-                el.points.forEach(p => { p.x += dx; p.y += dy; });
+                const dx = pos.x - ToolsDrawer.dragOffset.x - el.x, dy = pos.y - ToolsDrawer.dragOffset.y - el.y;
+                el.x += dx; el.y += dy; el.points.forEach(p => { p.x += dx; p.y += dy; });
             }
         }
     }
