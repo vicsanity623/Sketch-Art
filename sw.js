@@ -1,4 +1,4 @@
-const GAME_VERSION = 'v0.0.2'; // Incremented to force update
+const GAME_VERSION = 'v0.0.3'; // Incremented to force update
 const CACHE_NAME = `art-${GAME_VERSION}`;
 
 // Assets to cache immediately on install
