@@ -225,8 +225,10 @@
             </div>
         </div>
         <div class="drawer-section">
-            <span class="label-text">Smoothness</span>
-            <input type="range" id="tool-param-slider" min="1" max="500" value="100" style="width: 100%; height: 10px; writing-mode: horizontal-tb; -webkit-appearance: slider-horizontal;">
+            <span class="label-text">Shader Radius</span>
+            <input type="range" id="shade-radius" min="5" max="600" value="120" style="width: 100%; height: 10px; writing-mode: horizontal-tb; -webkit-appearance: slider-horizontal;">
+            <span class="label-text" style="margin-top:10px;">Shader Smoothness</span>
+            <input type="range" id="shade-smoothness" min="0" max="100" value="80" style="width: 100%; height: 10px; writing-mode: horizontal-tb; -webkit-appearance: slider-horizontal;">
         </div>
         <button onclick="ToolsDrawer.toggle()" style="width: 100%; height: 40px; background: none; border: none; color: #666; font-size: 11px; font-weight:800;">CLOSE</button>
     </div>
@@ -394,6 +396,28 @@
 
     function drawPaths(tCtx, cam) {
         strokes.forEach(s => {
+            strokes.forEach(s => {
+            // New: Specialized Shader Rendering
+            if (s.type === 'shader') {
+                tCtx.save();
+                s.points.forEach(p => {
+                    const grad = tCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s.radius);
+                    const corePoint = 0.5 * (1 - s.smoothness / 100);
+                    
+                    // Center color (Full opacity)
+                    grad.addColorStop(0, s.color);
+                    // Core point (Maintain full color until here)
+                    grad.addColorStop(corePoint, s.color);
+                    // Fade to edge (Transparent)
+                    grad.addColorStop(1, 'rgba(0,0,0,0)');
+                    
+                    tCtx.fillStyle = grad;
+                    tCtx.globalAlpha = s.opacity;
+                    tCtx.fillRect(p.x - s.radius, p.y - s.radius, s.radius * 2, s.radius * 2);
+                });
+                tCtx.restore();
+                return;
+            }
             if (s.type === 'line' || s.type === 'shape') {
                 if(typeof drawStaticAdvanced === 'function') drawStaticAdvanced(tCtx, s);
                 return;
