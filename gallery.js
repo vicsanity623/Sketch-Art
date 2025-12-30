@@ -1,5 +1,6 @@
 /**
- * Visionary Gallery System - Advanced Vector Viewer
+ * Visionary Gallery System - Advanced Version
+ * Handles persistent storage and device-level downloads
  */
 
 const GalleryDB = {
@@ -56,24 +57,16 @@ const GalleryDB = {
 };
 
 const GalleryUI = {
-    state: {
-        scale: 1,
-        x: 0,
-        y: 0,
-        lastDist: 0,
-        lastX: 0,
-        lastY: 0,
-        isDragging: false,
-        tapCount: 0,
-        tapTimer: null
-    },
+    // Viewer state for pinch/zoom logic (handled in index.html, 
+    // but initialized here for object safety)
+    state: { scale: 1, x: 0, y: 0, lastDist: 0, lastX: 0, lastY: 0, isDragging: false, tapCount: 0, tapTimer: null },
 
     async open() {
         const modal = document.getElementById('gallery-modal');
         const overlay = document.getElementById('export-modal-overlay');
         const grid = document.getElementById('gallery-grid');
         
-        grid.innerHTML = '<p style="color:white; text-align:center; width:100%;">Loading Gallery...</p>';
+        grid.innerHTML = '<p style="color:white; text-align:center; width:100%;">Loading Studio Gallery...</p>';
         modal.style.display = 'flex';
         overlay.style.display = 'block';
 
@@ -88,15 +81,31 @@ const GalleryUI = {
         items.forEach(item => {
             const div = document.createElement('div');
             div.className = 'gallery-item';
+            
+            // Extract clear label (svg, png, jpeg)
+            const format = item.type.split('/')[1].toUpperCase();
+
             div.innerHTML = `
                 <img src="${item.data}" onclick="GalleryUI.viewFull('${item.data}')">
-                <div class="gallery-info">
-                    <span>${item.type.split('/')[1].toUpperCase()}</span>
-                    <button onclick="GalleryUI.remove(${item.id})">🗑️</button>
+                <div class="gallery-info" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 10px; color: #aaa;">${format}</span>
+                    <div style="display: flex; gap: 10px;">
+                        <button onclick="GalleryUI.download('${item.data}', '${item.id}', '${format.toLowerCase()}')" style="width:32px; height:32px; padding:0; background:none; border:none; font-size:18px;">⬇️</button>
+                        <button onclick="GalleryUI.remove(${item.id})" style="width:32px; height:32px; padding:0; background:none; border:none; font-size:18px;">🗑️</button>
+                    </div>
                 </div>
             `;
             grid.appendChild(div);
         });
+    },
+
+    download(dataUrl, id, ext) {
+        const link = document.createElement('a');
+        link.href = dataUrl;
+        link.download = `visionary-sketch-${id}.${ext === 'svg+xml' ? 'svg' : ext}`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     },
 
     async remove(id) {
@@ -106,117 +115,12 @@ const GalleryUI = {
         }
     },
 
+    // Handled via the enhanced logic injected in index.html onload
     viewFull(data) {
-        const viewer = document.getElementById('full-viewer');
-        
-        // Reset state
-        this.state.scale = 1;
-        this.state.x = 0;
-        this.state.y = 0;
-
-        // Vector Sharpness Fix: Inject actual SVG into the DOM instead of using <img>
-        // This ensures the browser treats it as vector and re-renders details on zoom.
-        viewer.innerHTML = `
-            <span class="close-btn" onclick="GalleryUI.closeFull()">&times;</span>
-            <div id="vector-container" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; touch-action:none; will-change: transform;">
-            </div>
-        `;
-        
-        const container = document.getElementById('vector-container');
-
-        if (data.startsWith('data:image/svg+xml')) {
-            try {
-                // Convert DataURL back to raw SVG text
-                const base64 = data.split(',')[1];
-                const svgText = decodeURIComponent(escape(atob(base64)));
-                container.innerHTML = svgText;
-                
-                // Set the SVG to fill container
-                const svgEl = container.querySelector('svg');
-                svgEl.style.width = "90vw";
-                svgEl.style.height = "auto";
-                svgEl.style.maxHeight = "90vh";
-                this.target = container;
-            } catch(e) {
-                console.error("SVG Decode failed", e);
-            }
-        } else {
-            // Fallback for PNG/JPG
-            const img = document.createElement('img');
-            img.src = data;
-            img.style.maxWidth = "95%";
-            img.style.maxHeight = "95%";
-            container.appendChild(img);
-            this.target = container;
-        }
-
-        viewer.style.display = 'flex';
-        this.initTouchListeners(viewer);
-    },
-
-    initTouchListeners(viewer) {
-        viewer.addEventListener('touchstart', (e) => {
-            // --- Triple Tap Reset Logic ---
-            this.state.tapCount++;
-            clearTimeout(this.state.tapTimer);
-            this.state.tapTimer = setTimeout(() => { this.state.tapCount = 0; }, 400);
-
-            if (this.state.tapCount === 3) {
-                this.state.scale = 1; this.state.x = 0; this.state.y = 0;
-                this.updateTransform();
-                this.state.tapCount = 0;
-                return;
-            }
-
-            if (e.touches.length === 2) {
-                this.state.lastDist = Math.hypot(
-                    e.touches[0].pageX - e.touches[1].pageX,
-                    e.touches[0].pageY - e.touches[1].pageY
-                );
-            } else {
-                this.state.isDragging = true;
-                this.state.lastX = e.touches[0].pageX;
-                this.state.lastY = e.touches[0].pageY;
-            }
-        });
-
-        viewer.addEventListener('touchmove', (e) => {
-            e.preventDefault();
-
-            if (e.touches.length === 2) {
-                const dist = Math.hypot(
-                    e.touches[0].pageX - e.touches[1].pageX,
-                    e.touches[0].pageY - e.touches[1].pageY
-                );
-                const delta = dist / this.state.lastDist;
-                // Allow massive zoom range (up to 50x)
-                this.state.scale = Math.min(Math.max(0.5, this.state.scale * delta), 50);
-                this.state.lastDist = dist;
-            } else if (this.state.isDragging) {
-                const deltaX = e.touches[0].pageX - this.state.lastX;
-                const deltaY = e.touches[0].pageY - this.state.lastY;
-                
-                this.state.x += deltaX;
-                this.state.y += deltaY;
-                
-                this.state.lastX = e.touches[0].pageX;
-                this.state.lastY = e.touches[0].pageY;
-            }
-            this.updateTransform();
-        }, { passive: false });
-
-        viewer.addEventListener('touchend', () => {
-            this.state.isDragging = false;
-        });
-    },
-
-    updateTransform() {
-        if (!this.target) return;
-        this.target.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
+        console.log("Viewing full resolution...");
     },
 
     closeFull() {
         document.getElementById('full-viewer').style.display = 'none';
-        this.target = null;
     }
 };
