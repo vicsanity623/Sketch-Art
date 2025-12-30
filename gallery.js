@@ -1,6 +1,6 @@
 /**
  * Visionary Gallery System - Advanced Version
- * Handles persistent storage and device-level downloads
+ * Handles persistent storage, format labeling, and device-level downloads
  */
 
 const GalleryDB = {
@@ -82,16 +82,18 @@ const GalleryUI = {
             const div = document.createElement('div');
             div.className = 'gallery-item';
             
-            // Extract clear label (svg, png, jpeg)
-            const format = item.type.split('/')[1].toUpperCase();
+            // Professional Format detection
+            let format = item.type.split('/')[1].toUpperCase();
+            if (format.includes('SVG')) format = 'SVG'; // Clean up SVG+XML
+            if (format === 'JPEG') format = 'JPG';
 
             div.innerHTML = `
                 <img src="${item.data}" onclick="GalleryUI.viewFull('${item.data}')">
-                <div class="gallery-info" style="display:flex; justify-content:space-between; align-items:center;">
-                    <span style="background: rgba(255,255,255,0.1); padding: 2px 8px; border-radius: 6px; font-weight: 800; font-size: 10px; color: #aaa;">${format}</span>
-                    <div style="display: flex; gap: 10px;">
-                        <button onclick="GalleryUI.download('${item.data}', '${item.id}', '${format.toLowerCase()}')" style="width:32px; height:32px; padding:0; background:none; border:none; font-size:18px;">⬇️</button>
-                        <button onclick="GalleryUI.remove(${item.id})" style="width:32px; height:32px; padding:0; background:none; border:none; font-size:18px;">🗑️</button>
+                <div class="gallery-info" style="display:flex; justify-content:space-between; align-items:center; padding: 10px; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);">
+                    <span style="background: var(--accent); padding: 2px 8px; border-radius: 6px; font-weight: 900; font-size: 10px; color: #fff; letter-spacing: 1px;">${format}</span>
+                    <div style="display: flex; gap: 12px; align-items: center;">
+                        <button onclick="GalleryUI.download('${item.data}', '${item.id}', '${format.toLowerCase()}')" style="width:28px; height:28px; padding:0; background:none; border:none; font-size:18px; cursor:pointer;" title="Download to Device">⬇️</button>
+                        <button onclick="GalleryUI.remove(${item.id})" style="width:28px; height:28px; padding:0; background:none; border:none; font-size:18px; cursor:pointer;" title="Delete Artwork">🗑️</button>
                     </div>
                 </div>
             `;
@@ -102,7 +104,9 @@ const GalleryUI = {
     download(dataUrl, id, ext) {
         const link = document.createElement('a');
         link.href = dataUrl;
-        link.download = `visionary-sketch-${id}.${ext === 'svg+xml' ? 'svg' : ext}`;
+        // Ensure proper filename extension for vectors
+        const fileExt = ext === 'svg' ? 'svg' : (ext === 'jpg' ? 'jpg' : 'png');
+        link.download = `visionary-art-${id}.${fileExt}`;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -111,13 +115,13 @@ const GalleryUI = {
     async remove(id) {
         if(confirm("Delete this masterpiece?")) {
             await GalleryDB.delete(id);
-            this.open();
+            this.open(); // Refresh grid
         }
     },
 
-    // Handled via the enhanced logic injected in index.html onload
+    // Injected/Overridden via index.html for high-res vector viewing
     viewFull(data) {
-        console.log("Viewing full resolution...");
+        console.log("Opening full-res viewer...");
     },
 
     closeFull() {
