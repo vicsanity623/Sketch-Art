@@ -114,6 +114,7 @@
             background: #333; border-radius: 10px;
         }
 
+        /* Settings Styles */
         .modal {
             display: none; position: fixed; top: 50%; left: 50%;
             transform: translate(-50%, -50%); background: #1c1c1e;
@@ -132,6 +133,15 @@
         }
         
         .label-text { display: block; font-size: 10px; text-transform: uppercase; color: #8e8e93; letter-spacing: 1.2px; margin-bottom: 6px; font-weight: 700; }
+
+        /* Gesture Hint UI */
+        #gesture-zone {
+            position: fixed; bottom: 0; left: 0; width: 100%; height: 100px;
+            display: flex; align-items: center; justify-content: center;
+            background: linear-gradient(transparent, rgba(0,0,0,0.1));
+            pointer-events: auto; z-index: 5;
+        }
+        .swipe-hint { font-size: 10px; color: #444; letter-spacing: 3px; font-weight: 800; text-transform: uppercase; pointer-events: none; opacity: 0.5; }
 
         #gallery-modal {
             display: none; position: fixed; top: 50%; left: 50%;
@@ -169,6 +179,10 @@
 </div>
 
 <canvas id="canvas"></canvas>
+
+<div id="gesture-zone">
+    <div class="swipe-hint">← UNDO | REDO →</div>
+</div>
 
 <div id="ui-layer">
     <div id="status-bar" class="panel">ZOOM: <span id="zoom-val">100%</span></div>
@@ -228,10 +242,8 @@
     </div>
 </div>
 
-<!-- Settings Modal -->
 <div id="settings-modal" class="modal">
     <h3 style="color:white; margin-top:0;">Visionary Settings</h3>
-    
     <div class="setting-row">
         <span class="label-text">Enable Morphing</span>
         <input type="checkbox" id="set-morph" onchange="AppSettings.update('allowMorph', this.checked)">
@@ -244,20 +256,17 @@
         <span class="label-text">Snap to Grid</span>
         <input type="checkbox" id="set-snap" onchange="AppSettings.update('snapToGrid', this.checked)">
     </div>
-
     <div class="tip-box">
         <span class="label-text">Studio Tips</span>
-        <p><b>Single Tap:</b> Move/Scale Shapes.</p>
-        <p><b>Double Tap:</b> Enter Morph Mode.</p>
+        <p><b>Swipe Bottom Area:</b> Swipe Left to Undo, Right to Redo.</p>
+        <p><b>Double Tap Shape:</b> Enter Morph Mode.</p>
         <p><b>Triple Tap:</b> Commit Shape to Canvas.</p>
-        <p><b>Pinch:</b> Zoom Canvas or Resize Live Shapes.</p>
+        <p><b>SVG:</b> Lossless vector exports.</p>
     </div>
-
     <div style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 20px; padding-top: 15px; text-align: center;">
-        <p style="color: #666; font-size: 11px; margin: 0; letter-spacing: 1px; font-weight: 800;">VISIONARY SKETCH v0.1.7</p>
+        <p style="color: #666; font-size: 11px; margin: 0; letter-spacing: 1px; font-weight: 800;">VISIONARY SKETCH v0.1.9</p>
         <a href="https://github.com/vicsanity623/Sketch-Art" target="_blank" style="color: var(--accent); font-size: 12px; text-decoration: none; font-weight: 800; display: block; margin-top: 10px;">OPEN SOURCE GITHUB</a>
     </div>
-    
     <button onclick="AppSettings.toggle()" style="width:100%; background: var(--accent); margin-top:20px; padding:15px; border-radius:12px; border:none; color:white; font-weight:bold;">DONE</button>
 </div>
 
@@ -300,10 +309,16 @@
     const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true });
     const zoomDisplay = document.getElementById('zoom-val');
     
-    let strokes = [], currentStroke = null, camera = { x: 0, y: 0, zoom: 1 };
+    // Command Stacks
+    let strokes = [], redoStack = [], currentStroke = null, camera = { x: 0, y: 0, zoom: 1 };
+    
     let mode = 'draw', isDragging = false, isPinching = false;
     let crosshairActive = false, crosshairPos = { x: 0, y: 0 }, crosshairOffset = { x: 0, y: 0 };
-    let initialPinchDist = 0, initialPinchZoom = 1, lastTapTime = 0;
+    let initialPinchDist = 0, initialPinchZoom = 1;
+
+    // Gesture detection
+    let gestureZone = document.getElementById('gesture-zone');
+    let gestureStartX = 0, isGesturing = false;
 
     window.onload = () => {
         resize();
@@ -314,8 +329,7 @@
         GalleryUI.viewFull = function(data) {
             const viewer = document.getElementById('full-viewer');
             const container = document.getElementById('vector-viewer-container');
-            this.state.scale = 1; this.state.x = 0; this.state.y = 0;
-            container.innerHTML = "";
+            this.state.scale = 1; this.state.x = 0; this.state.y = 0; container.innerHTML = "";
             if (data.startsWith('data:image/svg+xml')) {
                 const b64 = data.split(',')[1];
                 const svgText = decodeURIComponent(escape(atob(b64)));
@@ -326,8 +340,7 @@
             } else {
                 const img = document.createElement('img');
                 img.src = data; img.style.maxWidth = "95%"; img.style.maxHeight = "95%";
-                container.appendChild(img);
-                this.target = img;
+                container.appendChild(img); this.target = img;
             }
             viewer.style.display = 'flex';
             if (!viewer.dataset.hooked) { this.initViewerEvents(viewer); viewer.dataset.hooked = "true"; }
@@ -341,12 +354,8 @@
                     this.state.scale = 1; this.state.x = 0; this.state.y = 0;
                     this.updateView(); this.state.tapCount = 0; return;
                 }
-                if (e.touches.length === 2) {
-                    this.state.lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
-                } else {
-                    this.state.isDragging = true;
-                    this.state.lastX = e.touches[0].pageX; this.state.lastY = e.touches[0].pageY;
-                }
+                if (e.touches.length === 2) { this.state.lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY); } 
+                else { this.state.isDragging = true; this.state.lastX = e.touches[0].pageX; this.state.lastY = e.touches[0].pageY; }
             });
             viewer.addEventListener('touchmove', e => {
                 e.preventDefault();
@@ -366,6 +375,20 @@
         GalleryUI.updateView = function() {
             if (this.target) this.target.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
         };
+
+        // --- Gesture Listeners for Bottom Zone ---
+        gestureZone.addEventListener('touchstart', e => {
+            gestureStartX = e.touches[0].clientX;
+            isGesturing = true;
+        });
+        gestureZone.addEventListener('touchend', e => {
+            if (!isGesturing) return;
+            const diff = e.changedTouches[0].clientX - gestureStartX;
+            if (diff < -50) undo(); // Swipe Left
+            if (diff > 50) redo();  // Swipe Right
+            isGesturing = false;
+        });
+
         requestAnimationFrame(renderLoop);
     };
 
@@ -385,10 +408,23 @@
         return { x, y };
     }
 
-    function undo() { if (strokes.length > 0) strokes.pop(); }
+    function undo() { 
+        if (strokes.length > 0) {
+            const popped = strokes.pop();
+            redoStack.push(popped);
+        }
+    }
+
+    function redo() {
+        if (redoStack.length > 0) {
+            const popped = redoStack.pop();
+            strokes.push(popped);
+        }
+    }
 
     function startNewStroke(x, y) {
         const pos = screenToWorld(x, y);
+        redoStack = []; // Clear redo stack on new action
         currentStroke = {
             color: document.getElementById('colorPicker').value,
             size: document.getElementById('sizePicker').value / camera.zoom,
@@ -407,9 +443,6 @@
                 crosshairPos.x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
                 crosshairPos.y = (e.touches[0].clientY + e.touches[1].clientY) / 2;
             } else if (e.touches.length === 1) {
-                const now = Date.now();
-                if (now - lastTapTime < 350) { undo(); undo(); lastTapTime = 0; return; }
-                lastTapTime = now;
                 isDragging = true;
                 startNewStroke(e.touches[0].clientX, e.touches[0].clientY);
             }
@@ -551,7 +584,7 @@
         if (m !== 'advanced') document.getElementById('tools-drawer').classList.remove('open');
     }
 
-    function clearCanvas() { if(confirm("Wipe the canvas?")) { strokes = []; camera = {x:0,y:0,zoom:1}; } }
+    function clearCanvas() { if(confirm("Wipe the canvas?")) { strokes = []; redoStack = []; camera = {x:0,y:0,zoom:1}; } }
     function showExport() { document.getElementById('export-modal').style.display = 'block'; document.getElementById('export-modal-overlay').style.display = 'block'; }
     function hideExport() { document.getElementById('export-modal').style.display = 'none'; document.getElementById('gallery-modal').style.display = 'none'; document.getElementById('settings-modal').style.display = 'none'; document.getElementById('export-modal-overlay').style.display = 'none'; }
 
