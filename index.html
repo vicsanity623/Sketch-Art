@@ -396,45 +396,33 @@
 
     function drawPaths(tCtx, cam) {
         strokes.forEach(s => {
-            strokes.forEach(s => {
-            // New: Specialized Shader Rendering
-            if (s.type === 'shader') {
-                tCtx.save();
-                s.points.forEach(p => {
-                    const grad = tCtx.createRadialGradient(p.x, p.y, 0, p.x, p.y, s.radius);
-                    const corePoint = 0.5 * (1 - s.smoothness / 100);
-                    
-                    // Center color (Full opacity)
-                    grad.addColorStop(0, s.color);
-                    // Core point (Maintain full color until here)
-                    grad.addColorStop(corePoint, s.color);
-                    // Fade to edge (Transparent)
-                    grad.addColorStop(1, 'rgba(0,0,0,0)');
-                    
-                    tCtx.fillStyle = grad;
-                    tCtx.globalAlpha = s.opacity;
-                    tCtx.fillRect(p.x - s.radius, p.y - s.radius, s.radius * 2, s.radius * 2);
-                });
-                tCtx.restore();
-                return;
+            // 1. Route Advanced Tools (Line, Shape, Shader) to tools.js
+            if (s.type === 'line' || s.type === 'shape' || s.type === 'shader') {
+                if (typeof drawStaticAdvanced === 'function') {
+                    drawStaticAdvanced(tCtx, s);
+                }
+                return; // Move to next stroke
             }
-            if (s.type === 'line' || s.type === 'shape') {
-                if(typeof drawStaticAdvanced === 'function') drawStaticAdvanced(tCtx, s);
-                return;
-            }
-
-            if (!s.points.length) return;
+    
+            // 2. Standard Tools (Pen, Pencil, Eraser) logic
+            if (!s.points || !s.points.length) return;
+            
             tCtx.save();
-            tCtx.lineCap = 'round'; tCtx.lineJoin = 'round';
+            tCtx.lineCap = 'round'; 
+            tCtx.lineJoin = 'round';
+    
             if (s.type === 'eraser') {
                 tCtx.globalCompositeOperation = 'destination-out';
-                tCtx.strokeStyle = 'white'; tCtx.globalAlpha = 1;
+                tCtx.strokeStyle = 'white'; 
+                tCtx.globalAlpha = 1;
             } else {
                 tCtx.globalCompositeOperation = 'source-over';
-                tCtx.strokeStyle = s.color; tCtx.fillStyle = s.color;
+                tCtx.strokeStyle = s.color; 
+                tCtx.fillStyle = s.color;
                 tCtx.globalAlpha = s.opacity;
             }
-
+    
+            // Tool specific styling
             if (s.type === 'brush') {
                 tCtx.shadowBlur = (s.size * cam.zoom) / 1.5; 
                 tCtx.shadowColor = s.color;
@@ -444,12 +432,16 @@
                 tCtx.globalAlpha *= 0.6;
                 tCtx.lineWidth = s.size * 0.8;
             }
-
+    
+            // Draw the path
             if (s.points.length === 1) {
                 const p = s.points[0];
-                tCtx.beginPath(); tCtx.arc(p.x, p.y, s.size/2, 0, Math.PI*2); tCtx.fill();
+                tCtx.beginPath(); 
+                tCtx.arc(p.x, p.y, s.size/2, 0, Math.PI*2); 
+                tCtx.fill();
             } else {
-                tCtx.beginPath(); tCtx.moveTo(s.points[0].x, s.points[0].y);
+                tCtx.beginPath(); 
+                tCtx.moveTo(s.points[0].x, s.points[0].y);
                 s.points.forEach(p => tCtx.lineTo(p.x, p.y));
                 tCtx.lineWidth = (s.type === 'pencil' ? s.size * 0.8 : s.size);
                 tCtx.stroke();
