@@ -6,6 +6,7 @@ const ToolsDrawer = {
     isOpen: false,
     activeTool: null,
     liveElement: null,
+    currentShader: null, // Track the active shader stroke
     lastDist: 0,
     tapCount: 0,
     tapTimer: null,
@@ -19,6 +20,7 @@ const ToolsDrawer = {
         setMode('advanced');
         this.activeTool = tool;
         this.liveElement = null;
+        this.currentShader = null;
         document.querySelectorAll('.drawer-btn').forEach(b => b.classList.remove('active'));
         const btn = document.getElementById(`tool-${tool}`);
         if(btn) btn.classList.add('active');
@@ -47,6 +49,31 @@ const ToolsDrawer = {
     }
 };
 
+// --- Shader Rendering Logic ---
+function drawShader(ctx, s) {
+    ctx.save();
+    // Shader uses its own opacity logic combined with the Flow slider
+    ctx.globalAlpha = s.opacity;
+    
+    s.points.forEach(p => {
+        const radius = s.radius;
+        const grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, radius);
+        
+        // Calculate the core size based on smoothness (0-100)
+        // 0 smoothness = 50% solid core. 100 smoothness = 0% solid core.
+        const coreRatio = 0.5 * (1 - s.smoothness / 100);
+        
+        grad.addColorStop(0, s.color);
+        grad.addColorStop(Math.max(0.01, coreRatio), s.color);
+        grad.addColorStop(1, 'rgba(0,0,0,0)'); // Fade to transparent
+        
+        ctx.fillStyle = grad;
+        // Use fillRect for the gradient boundary
+        ctx.fillRect(p.x - radius, p.y - radius, radius * 2, radius * 2);
+    });
+    ctx.restore();
+}
+
 // --- Specialized Renderers ---
 function drawPolygon(ctx, x, y, radius, sides) {
     ctx.beginPath();
@@ -63,28 +90,26 @@ function drawPolygon(ctx, x, y, radius, sides) {
 
 function drawStar(ctx, cx, cy, spikes, outerRadius, innerRadius) {
     let rot = Math.PI / 2 * 3;
-    let x = cx;
-    let y = cy;
     let step = Math.PI / spikes;
     ctx.beginPath();
     ctx.moveTo(cx, cy - outerRadius);
     for (let i = 0; i < spikes; i++) {
-        x = cx + Math.cos(rot) * outerRadius;
-        y = cy + Math.sin(rot) * outerRadius;
-        ctx.lineTo(x, y);
+        ctx.lineTo(cx + Math.cos(rot) * outerRadius, cy + Math.sin(rot) * outerRadius);
         rot += step;
-        x = cx + Math.cos(rot) * innerRadius;
-        y = cy + Math.sin(rot) * innerRadius;
-        ctx.lineTo(x, y);
+        ctx.lineTo(cx + Math.cos(rot) * innerRadius, cy + Math.sin(rot) * innerRadius);
         rot += step;
     }
-    ctx.lineTo(cx, cy - outerRadius);
     ctx.closePath();
     ctx.stroke();
 }
 
 // --- Global Rendering Hooks ---
 function drawStaticAdvanced(ctx, s) {
+    if (s.type === 'shader') {
+        drawShader(ctx, s);
+        return;
+    }
+    
     ctx.save();
     ctx.strokeStyle = s.color;
     ctx.lineWidth = s.thickness;
@@ -145,6 +170,18 @@ canvas.addEventListener('touchstart', e => {
         }
     }
     
+    if (ToolsDrawer.activeTool === 'shade') {
+        ToolsDrawer.currentShader = {
+            type: 'shader',
+            radius: document.getElementById('shade-radius').value / camera.zoom,
+            smoothness: document.getElementById('shade-smoothness').value,
+            color: document.getElementById('colorPicker').value,
+            opacity: document.getElementById('opacityPicker').value / 100,
+            points: [{...pos}]
+        };
+        strokes.push(ToolsDrawer.currentShader);
+    }
+    
     if (ToolsDrawer.activeTool === 'shape' && ToolsDrawer.liveElement) {
         if (e.touches.length === 2) {
             ToolsDrawer.lastDist = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY);
@@ -163,13 +200,13 @@ canvas.addEventListener('touchmove', e => {
         ToolsDrawer.liveElement[ToolsDrawer.liveElement.activePoint] = {...pos};
     }
 
-    if (ToolsDrawer.activeTool === 'shade') {
-        const smoothness = document.getElementById('tool-param-slider').value / camera.zoom;
-        strokes.push({
-            type: 'brush', size: smoothness, color: document.getElementById('colorPicker').value,
-            opacity: document.getElementById('opacityPicker').value / 200,
-            points: [{...pos}, {...pos}]
-        });
+    if (ToolsDrawer.activeTool === 'shade' && ToolsDrawer.currentShader) {
+        const last = ToolsDrawer.currentShader.points[ToolsDrawer.currentShader.points.length - 1];
+        const dist = Math.hypot(pos.x - last.x, pos.y - last.y);
+        // Performance guard: Only add points if they move at least 1/10th of the radius
+        if (dist > ToolsDrawer.currentShader.radius / 10) {
+            ToolsDrawer.currentShader.points.push({...pos});
+        }
     }
 
     if (ToolsDrawer.activeTool === 'shape' && ToolsDrawer.liveElement) {
@@ -184,4 +221,7 @@ canvas.addEventListener('touchmove', e => {
     }
 });
 
-canvas.addEventListener('touchend', () => { ToolsDrawer.isDragging = false; });
+canvas.addEventListener('touchend', () => { 
+    ToolsDrawer.isDragging = false; 
+    ToolsDrawer.currentShader = null; 
+});
