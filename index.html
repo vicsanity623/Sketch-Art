@@ -58,7 +58,6 @@
             max-height: 80vh; overflow-y: auto;
         }
 
-        /* --- NEW: Advanced Drawer Styles --- */
         #tools-drawer {
             position: absolute; top: 50%; left: 100px; transform: translateY(-50%);
             background: var(--ui-bg); backdrop-filter: blur(30px);
@@ -75,7 +74,6 @@
             background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 12px;
         }
         .drawer-btn.active { background: var(--accent); border-color: var(--accent); }
-        /* ---------------------------------- */
 
         #status-bar { 
             top: max(20px, env(safe-area-inset-top)); 
@@ -163,7 +161,7 @@
             display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: #000; z-index: 200; align-items: center; justify-content: center;
         }
-        #full-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; }
+        #full-viewer img, #full-viewer svg { will-change: transform; transition: none; }
         #full-viewer .close-btn { position: absolute; top: max(30px, env(safe-area-inset-top)); right: 30px; z-index: 201; font-size: 35px; color: white; cursor: pointer; }
     </style>
 </head>
@@ -184,7 +182,6 @@
         <button class="btn-clear" onclick="clearCanvas()">CLEAR</button>
     </div>
     
-    <!-- Toolbar with Advanced Toggle -->
     <div id="toolbar" class="panel">
         <button id="btn-expand" onclick="ToolsDrawer.toggle()" style="background: #2c2c2e; margin-bottom: 10px;">◈</button>
         <span class="label-text">Color</span>
@@ -204,7 +201,6 @@
         <button id="btn-pan" onclick="setMode('pan')">✥</button>
     </div>
 
-    <!-- The Advanced Tools Drawer -->
     <div id="tools-drawer">
         <div class="drawer-section">
             <span class="label-text">Precision</span>
@@ -266,7 +262,7 @@
 
 <div id="full-viewer">
     <span class="close-btn" onclick="GalleryUI.closeFull()">&times;</span>
-    <img src="" alt="Full View">
+    <div id="vector-viewer-container" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; touch-action:none;"></div>
 </div>
 
 <script src="gallery.js"></script>
@@ -285,6 +281,66 @@
         resize();
         document.getElementById('loader').style.opacity = '0';
         setTimeout(() => document.getElementById('loader').remove(), 500);
+        
+        // Inject Enhanced SVG Viewer Logic to override gallery.js
+        GalleryUI.state = { scale: 1, x: 0, y: 0, lastDist: 0, lastX: 0, lastY: 0, isDragging: false, tapCount: 0, tapTimer: null };
+        GalleryUI.viewFull = function(data) {
+            const viewer = document.getElementById('full-viewer');
+            const container = document.getElementById('vector-viewer-container');
+            this.state.scale = 1; this.state.x = 0; this.state.y = 0;
+            container.innerHTML = "";
+            
+            if (data.startsWith('data:image/svg+xml')) {
+                const b64 = data.split(',')[1];
+                const svgText = decodeURIComponent(escape(atob(b64)));
+                container.innerHTML = svgText;
+                const svgEl = container.querySelector('svg');
+                svgEl.style.width = "90vw"; svgEl.style.height = "auto"; svgEl.style.maxHeight = "90vh";
+                this.target = svgEl;
+            } else {
+                const img = document.createElement('img');
+                img.src = data; img.style.maxWidth = "95%"; img.style.maxHeight = "95%";
+                container.appendChild(img);
+                this.target = img;
+            }
+            viewer.style.display = 'flex';
+            if (!viewer.dataset.hooked) { this.initViewerEvents(viewer); viewer.dataset.hooked = "true"; }
+        };
+        GalleryUI.initViewerEvents = function(viewer) {
+            viewer.addEventListener('touchstart', e => {
+                this.state.tapCount++;
+                clearTimeout(this.state.tapTimer);
+                this.state.tapTimer = setTimeout(() => { this.state.tapCount = 0; }, 400);
+                if (this.state.tapCount === 3) {
+                    this.state.scale = 1; this.state.x = 0; this.state.y = 0;
+                    this.updateView(); this.state.tapCount = 0; return;
+                }
+                if (e.touches.length === 2) {
+                    this.state.lastDist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                } else {
+                    this.state.isDragging = true;
+                    this.state.lastX = e.touches[0].pageX; this.state.lastY = e.touches[0].pageY;
+                }
+            });
+            viewer.addEventListener('touchmove', e => {
+                e.preventDefault();
+                if (e.touches.length === 2) {
+                    const dist = Math.hypot(e.touches[0].pageX - e.touches[1].pageX, e.touches[0].pageY - e.touches[1].pageY);
+                    this.state.scale = Math.min(Math.max(0.5, this.state.scale * (dist / this.state.lastDist)), 100);
+                    this.state.lastDist = dist;
+                } else if (this.state.isDragging) {
+                    this.state.x += (e.touches[0].pageX - this.state.lastX);
+                    this.state.y += (e.touches[0].pageY - this.state.lastY);
+                    this.state.lastX = e.touches[0].pageX; this.state.lastY = e.touches[0].pageY;
+                }
+                this.updateView();
+            }, { passive: false });
+            viewer.addEventListener('touchend', () => { this.state.isDragging = false; });
+        };
+        GalleryUI.updateView = function() {
+            if (this.target) this.target.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
+        };
+
         requestAnimationFrame(renderLoop);
     };
 
@@ -313,9 +369,7 @@
     }
 
     canvas.addEventListener('touchstart', e => {
-        // Intercept for advanced tools
         if (mode === 'advanced') return;
-
         if (mode === 'draw') {
             if (e.touches.length === 2) {
                 isPinching = true; crosshairActive = true; isDragging = false; currentStroke = null;
@@ -343,7 +397,6 @@
     canvas.addEventListener('touchmove', e => {
         e.preventDefault();
         if (mode === 'advanced') return;
-
         if (mode === 'draw') {
             if (isPinching && e.touches.length === 2) {
                 crosshairPos.x = (e.touches[0].clientX + e.touches[1].clientX) / 2;
@@ -369,7 +422,6 @@
 
     canvas.addEventListener('touchend', e => {
         if (mode === 'advanced') return;
-
         if (mode === 'draw') {
             if (isPinching && e.touches.length === 1) {
                 isPinching = false; isDragging = true;
@@ -396,52 +448,33 @@
 
     function drawPaths(tCtx, cam) {
         strokes.forEach(s => {
-            // 1. Route Advanced Tools (Line, Shape, Shader) to tools.js
             if (s.type === 'line' || s.type === 'shape' || s.type === 'shader') {
-                if (typeof drawStaticAdvanced === 'function') {
-                    drawStaticAdvanced(tCtx, s);
-                }
-                return; // Move to next stroke
+                if (typeof drawStaticAdvanced === 'function') drawStaticAdvanced(tCtx, s);
+                return;
             }
-    
-            // 2. Standard Tools (Pen, Pencil, Eraser) logic
             if (!s.points || !s.points.length) return;
-            
             tCtx.save();
-            tCtx.lineCap = 'round'; 
-            tCtx.lineJoin = 'round';
-    
+            tCtx.lineCap = 'round'; tCtx.lineJoin = 'round';
             if (s.type === 'eraser') {
                 tCtx.globalCompositeOperation = 'destination-out';
-                tCtx.strokeStyle = 'white'; 
-                tCtx.globalAlpha = 1;
+                tCtx.strokeStyle = 'white'; tCtx.globalAlpha = 1;
             } else {
                 tCtx.globalCompositeOperation = 'source-over';
-                tCtx.strokeStyle = s.color; 
-                tCtx.fillStyle = s.color;
+                tCtx.strokeStyle = s.color; tCtx.fillStyle = s.color;
                 tCtx.globalAlpha = s.opacity;
             }
-    
-            // Tool specific styling
             if (s.type === 'brush') {
-                tCtx.shadowBlur = (s.size * cam.zoom) / 1.5; 
-                tCtx.shadowColor = s.color;
+                tCtx.shadowBlur = (s.size * cam.zoom) / 1.5; tCtx.shadowColor = s.color;
                 tCtx.globalAlpha *= 0.4;
             } else if (s.type === 'pencil') {
                 tCtx.setLineDash([0.5 / cam.zoom, 2.5 / cam.zoom]); 
-                tCtx.globalAlpha *= 0.6;
-                tCtx.lineWidth = s.size * 0.8;
+                tCtx.globalAlpha *= 0.6; tCtx.lineWidth = s.size * 0.8;
             }
-    
-            // Draw the path
             if (s.points.length === 1) {
                 const p = s.points[0];
-                tCtx.beginPath(); 
-                tCtx.arc(p.x, p.y, s.size/2, 0, Math.PI*2); 
-                tCtx.fill();
+                tCtx.beginPath(); tCtx.arc(p.x, p.y, s.size/2, 0, Math.PI*2); tCtx.fill();
             } else {
-                tCtx.beginPath(); 
-                tCtx.moveTo(s.points[0].x, s.points[0].y);
+                tCtx.beginPath(); tCtx.moveTo(s.points[0].x, s.points[0].y);
                 s.points.forEach(p => tCtx.lineTo(p.x, p.y));
                 tCtx.lineWidth = (s.type === 'pencil' ? s.size * 0.8 : s.size);
                 tCtx.stroke();
@@ -487,9 +520,8 @@
         if (!strokes.length) return;
         const format = document.getElementById('expFormat').value;
         const bgChoice = document.getElementById('expBG').value;
-    
-        // 1. Calculate Bounding Box (Including Shaders and Shapes)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
         strokes.forEach(s => {
             if (s.points) s.points.forEach(p => {
                 const r = s.type === 'shader' ? s.radius : (s.size || 0);
@@ -509,79 +541,61 @@
         const pad = Math.max(maxX - minX, maxY - minY) * 0.05;
         minX -= pad; minY -= pad; maxX += pad; maxY += pad;
         const worldW = maxX - minX, worldH = maxY - minY;
-    
         let finalData;
     
         if (format === 'vector/svg') {
-            // --- SVG VECTOR EXPORT ---
             let svgDefs = `<defs><filter id="brushBlur"><feGaussianBlur stdDeviation="3" /></filter>`;
             let svgBody = "";
-    
-            strokes.forEach((s, strokeIdx) => {
+            strokes.forEach((s, idx) => {
                 if (s.type === 'eraser') return;
-    
-                // Handle Shader Export
+                const style = `opacity="${s.opacity || 1}"`;
                 if (s.type === 'shader') {
-                    const gradId = `grad-${strokeIdx}`;
-                    const corePoint = 0.5 * (1 - s.smoothness / 100);
-                    
-                    // Define a radial gradient for this specific shader stroke
-                    svgDefs += `
-                        <radialGradient id="${gradId}">
-                            <stop offset="0%" stop-color="${s.color}" />
-                            <stop offset="${corePoint * 100}%" stop-color="${s.color}" />
-                            <stop offset="100%" stop-color="${s.color}" stop-opacity="0" />
-                        </radialGradient>`;
-    
-                    // Place a circle for every point in the shader stroke
-                    s.points.forEach(p => {
-                        svgBody += `<circle cx="${p.x}" cy="${p.y}" r="${s.radius}" fill="url(#${gradId})" opacity="${s.opacity}" />`;
-                    });
-                } 
-                
-                // Handle Normal Pen/Pencil Export
-                else if (s.points && s.points.length > 1) {
-                    let pathData = `M ${s.points[0].x} ${s.points[0].y} `;
-                    s.points.forEach((p, i) => { if(i>0) pathData += `L ${p.x} ${p.y} `; });
-                    let style = `fill="none" stroke="${s.color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round" opacity="${s.opacity}"`;
-                    if (s.type === 'pencil') style += ` stroke-dasharray="1,3"`;
-                    if (s.type === 'brush') style += ` filter="url(#brushBlur)"`;
-                    svgBody += `<path d="${pathData}" ${style} />`;
-                }
-                
-                // Handle Line/Shape Export
-                else if (s.type === 'line') {
-                    svgBody += `<line x1="${s.a.x}" y1="${s.a.y}" x2="${s.b.x}" y2="${s.b.y}" stroke="${s.color}" stroke-width="${s.thickness}" stroke-linecap="round" />`;
+                    const id = `sh-${idx}`, core = 0.5 * (1 - s.smoothness / 100);
+                    svgDefs += `<radialGradient id="${id}"><stop offset="0%" stop-color="${s.color}"/><stop offset="${core*100}%" stop-color="${s.color}"/><stop offset="100%" stop-color="${s.color}" stop-opacity="0"/></radialGradient>`;
+                    s.points.forEach(p => { svgBody += `<circle cx="${p.x}" cy="${p.y}" r="${s.radius}" fill="url(#${id})" ${style} />`; });
+                } else if (s.type === 'shape') {
+                    const sz = s.size, x = s.x, y = s.y;
+                    const shStyle = `fill="none" stroke="${s.color}" stroke-width="${s.thickness}" stroke-linecap="round" stroke-linejoin="round" ${style}`;
+                    if (s.shape === 'rect') svgBody += `<rect x="${x-sz/2}" y="${y-sz/2}" width="${sz}" height="${sz}" ${shStyle} />`;
+                    else if (s.shape === 'circle') svgBody += `<circle cx="${x}" cy="${y}" r="${sz/2}" ${shStyle} />`;
+                    else {
+                        let sides = (s.shape==='tri'?3:(s.shape==='hex'?6:(s.shape==='oct'?8:0))), pts=[];
+                        if (sides > 0) {
+                            for(let i=0;i<sides;i++) { const a=(i*2*Math.PI)/sides-Math.PI/2; pts.push(`${x+(sz/2)*Math.cos(a)},${y+(sz/2)*Math.sin(a)}`); }
+                            svgBody += `<polygon points="${pts.join(' ')}" ${shStyle} />`;
+                        } else if (s.shape === 'star') {
+                            let r=Math.PI/2*3, st=Math.PI/5;
+                            for(let i=0;i<5;i++) { pts.push(`${x+Math.cos(r)*sz/2},${y+Math.sin(r)*sz/2}`); r+=st; pts.push(`${x+Math.cos(r)*sz/5},${y+Math.sin(r)*sz/5}`); r+=st; }
+                            svgBody += `<polygon points="${pts.join(' ')}" ${shStyle} />`;
+                        }
+                    }
+                } else if (s.type === 'line') {
+                    svgBody += `<line x1="${s.a.x}" y1="${s.a.y}" x2="${s.b.x}" y2="${s.b.y}" stroke="${s.color}" stroke-width="${s.thickness}" stroke-linecap="round" ${style}/>`;
+                } else if (s.points && s.points.length > 1) {
+                    let d = `M ${s.points[0].x} ${s.points[0].y} `;
+                    s.points.forEach((p, i) => { if(i>0) d += `L ${p.x} ${p.y} `; });
+                    let st = `fill="none" stroke="${s.color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round" ${style}`;
+                    if (s.type === 'pencil') st += ` stroke-dasharray="1,3"`;
+                    if (s.type === 'brush') st += ` filter="url(#brushBlur)"`;
+                    svgBody += `<path d="${d}" ${st} />`;
                 }
             });
-    
             svgDefs += `</defs>`;
             let svgFull = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${worldW} ${worldH}" width="${worldW}" height="${worldH}">`;
             if (bgChoice !== 'transparent') svgFull += `<rect x="${minX}" y="${minY}" width="${worldW}" height="${worldH}" fill="${bgChoice}"/>`;
             svgFull += svgDefs + svgBody + `</svg>`;
-            
             finalData = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgFull)));
         } else {
-            // --- RASTER EXPORT (PNG/JPG) ---
             const width = parseInt(document.getElementById('expWidth').value);
             const scale = width / worldW;
             const height = worldH * scale;
-            const out = document.createElement('canvas');
-            out.width = width; out.height = height;
+            const out = document.createElement('canvas'); out.width = width; out.height = height;
             const octx = out.getContext('2d', {alpha: true});
-            
             if (bgChoice !== 'transparent') { octx.fillStyle = bgChoice; octx.fillRect(0,0,width,height); }
-            octx.save(); 
-            octx.scale(scale, scale); 
-            octx.translate(-minX, -minY);
-            
-            // Use your main drawPaths function for the export canvas
-            drawPaths(octx, { zoom: scale });
-            octx.restore();
-            
+            octx.save(); octx.scale(scale, scale); octx.translate(-minX, -minY);
+            drawPaths(octx, { zoom: scale }); octx.restore();
             finalData = out.toDataURL(format);
         }
-    
         try { await GalleryDB.save(finalData, format); } catch(e) { console.error(e); }
         hideExport();
     }
