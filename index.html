@@ -114,7 +114,6 @@
             background: #333; border-radius: 10px;
         }
 
-        /* Settings Styles */
         .modal {
             display: none; position: fixed; top: 50%; left: 50%;
             transform: translate(-50%, -50%); background: #1c1c1e;
@@ -252,13 +251,17 @@
         <p><b>Double Tap:</b> Enter Morph Mode.</p>
         <p><b>Triple Tap:</b> Commit Shape to Canvas.</p>
         <p><b>Pinch:</b> Zoom Canvas or Resize Live Shapes.</p>
-        <p><b>SVG:</b> Exports are infinitely vector, no blur.</p>
+    </div>
+
+    <div style="border-top: 1px solid rgba(255,255,255,0.1); margin-top: 20px; padding-top: 15px; text-align: center;">
+        <p style="color: #666; font-size: 11px; margin: 0; letter-spacing: 1px; font-weight: 800;">VISIONARY SKETCH v1.2.5</p>
+        <a href="https://github.com/vicsanity623/Sketch-Art" target="_blank" style="color: var(--accent); font-size: 12px; text-decoration: none; font-weight: 800; display: block; margin-top: 10px;">OPEN SOURCE GITHUB</a>
     </div>
     
     <button onclick="AppSettings.toggle()" style="width:100%; background: var(--accent); margin-top:20px; padding:15px; border-radius:12px; border:none; color:white; font-weight:bold;">DONE</button>
 </div>
 
-<div id="export-modal-overlay" class="overlay" onclick="hideExport(); AppSettings.toggle();"></div>
+<div id="export-modal-overlay" class="overlay" onclick="hideExport(); if(AppSettings.panel.style.display==='block') AppSettings.toggle();"></div>
 
 <div id="export-modal" class="modal">
     <h3 style="color:white; margin-top:0;">Export Artwork</h3>
@@ -375,7 +378,6 @@
     function screenToWorld(sx, sy) {
         let x = (sx - camera.x) / camera.zoom;
         let y = (sy - camera.y) / camera.zoom;
-        // Apply Snap to Grid setting
         if (AppSettings.config.snapToGrid) {
             x = Math.round(x / AppSettings.config.gridSize) * AppSettings.config.gridSize;
             y = Math.round(y / AppSettings.config.gridSize) * AppSettings.config.gridSize;
@@ -519,12 +521,8 @@
         ctx.save();
         ctx.translate(camera.x, camera.y);
         ctx.scale(camera.zoom, camera.zoom);
-
-        // --- NEW: Draw Alignment Grid ---
         if (AppSettings.config.showGrid) {
-            ctx.beginPath();
-            ctx.strokeStyle = "rgba(255,255,255,0.05)";
-            ctx.lineWidth = 1 / camera.zoom;
+            ctx.beginPath(); ctx.strokeStyle = "rgba(255,255,255,0.05)"; ctx.lineWidth = 1 / camera.zoom;
             const size = AppSettings.config.gridSize;
             const startX = Math.floor((-camera.x/camera.zoom)/size)*size;
             const startY = Math.floor((-camera.y/camera.zoom)/size)*size;
@@ -534,17 +532,13 @@
             for(let y = startY; y < endY; y += size) { ctx.moveTo(startX, y); ctx.lineTo(endX, y); }
             ctx.stroke();
         }
-
         drawPaths(ctx, camera);
         if(typeof drawAdvanced === 'function') drawAdvanced(ctx);
         ctx.restore();
         if (crosshairActive) {
-            ctx.setTransform(1, 0, 0, 1, 0, 0);
-            ctx.strokeStyle = "#00ff66"; ctx.lineWidth = 2;
-            ctx.beginPath();
-            ctx.moveTo(crosshairPos.x - 40, crosshairPos.y); ctx.lineTo(crosshairPos.x + 40, crosshairPos.y);
-            ctx.moveTo(crosshairPos.x, crosshairPos.y - 40); ctx.lineTo(crosshairPos.x, crosshairPos.y + 40);
-            ctx.stroke();
+            ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.strokeStyle = "#00ff66"; ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.moveTo(crosshairPos.x - 40, crosshairPos.y); ctx.lineTo(crosshairPos.x + 40, crosshairPos.y);
+            ctx.moveTo(crosshairPos.x, crosshairPos.y - 40); ctx.lineTo(crosshairPos.x, crosshairPos.y + 40); ctx.stroke();
             ctx.beginPath(); ctx.arc(crosshairPos.x, crosshairPos.y, 15, 0, Math.PI * 2); ctx.stroke();
         }
         requestAnimationFrame(renderLoop);
