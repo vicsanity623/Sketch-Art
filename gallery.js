@@ -1,5 +1,5 @@
 /**
- * Visionary Gallery System
+ * Visionary Gallery System - Advanced Vector Viewer
  */
 
 const GalleryDB = {
@@ -56,7 +56,6 @@ const GalleryDB = {
 };
 
 const GalleryUI = {
-    // Zoom/Pan State
     state: {
         scale: 1,
         x: 0,
@@ -65,7 +64,8 @@ const GalleryUI = {
         lastX: 0,
         lastY: 0,
         isDragging: false,
-        lastTap: 0
+        tapCount: 0,
+        tapTimer: null
     },
 
     async open() {
@@ -74,7 +74,7 @@ const GalleryUI = {
         const grid = document.getElementById('gallery-grid');
         
         grid.innerHTML = '<p style="color:white; text-align:center; width:100%;">Loading Gallery...</p>';
-        modal.style.display = 'flex'; // Changed to flex for better centering
+        modal.style.display = 'flex';
         overlay.style.display = 'block';
 
         const items = await GalleryDB.getAll();
@@ -108,34 +108,65 @@ const GalleryUI = {
 
     viewFull(data) {
         const viewer = document.getElementById('full-viewer');
-        const img = viewer.querySelector('img');
         
         // Reset state
         this.state.scale = 1;
         this.state.x = 0;
         this.state.y = 0;
-        
-        img.src = data;
-        img.style.transform = `translate(0px, 0px) scale(1)`;
-        viewer.style.display = 'flex';
 
-        // Initialize touch listeners if not already attached
-        if (!viewer.dataset.initialized) {
-            this.initTouchListeners(viewer, img);
-            viewer.dataset.initialized = "true";
+        // Vector Sharpness Fix: Inject actual SVG into the DOM instead of using <img>
+        // This ensures the browser treats it as vector and re-renders details on zoom.
+        viewer.innerHTML = `
+            <span class="close-btn" onclick="GalleryUI.closeFull()">&times;</span>
+            <div id="vector-container" style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; touch-action:none; will-change: transform;">
+            </div>
+        `;
+        
+        const container = document.getElementById('vector-container');
+
+        if (data.startsWith('data:image/svg+xml')) {
+            try {
+                // Convert DataURL back to raw SVG text
+                const base64 = data.split(',')[1];
+                const svgText = decodeURIComponent(escape(atob(base64)));
+                container.innerHTML = svgText;
+                
+                // Set the SVG to fill container
+                const svgEl = container.querySelector('svg');
+                svgEl.style.width = "90vw";
+                svgEl.style.height = "auto";
+                svgEl.style.maxHeight = "90vh";
+                this.target = container;
+            } catch(e) {
+                console.error("SVG Decode failed", e);
+            }
+        } else {
+            // Fallback for PNG/JPG
+            const img = document.createElement('img');
+            img.src = data;
+            img.style.maxWidth = "95%";
+            img.style.maxHeight = "95%";
+            container.appendChild(img);
+            this.target = container;
         }
+
+        viewer.style.display = 'flex';
+        this.initTouchListeners(viewer);
     },
 
-    initTouchListeners(viewer, img) {
+    initTouchListeners(viewer) {
         viewer.addEventListener('touchstart', (e) => {
-            // Double tap to reset
-            const now = Date.now();
-            if (now - this.state.lastTap < 300) {
+            // --- Triple Tap Reset Logic ---
+            this.state.tapCount++;
+            clearTimeout(this.state.tapTimer);
+            this.state.tapTimer = setTimeout(() => { this.state.tapCount = 0; }, 400);
+
+            if (this.state.tapCount === 3) {
                 this.state.scale = 1; this.state.x = 0; this.state.y = 0;
-                this.updateTransform(img);
+                this.updateTransform();
+                this.state.tapCount = 0;
                 return;
             }
-            this.state.lastTap = now;
 
             if (e.touches.length === 2) {
                 this.state.lastDist = Math.hypot(
@@ -158,22 +189,20 @@ const GalleryUI = {
                     e.touches[0].pageY - e.touches[1].pageY
                 );
                 const delta = dist / this.state.lastDist;
-                this.state.scale = Math.min(Math.max(1, this.state.scale * delta), 10);
+                // Allow massive zoom range (up to 50x)
+                this.state.scale = Math.min(Math.max(0.5, this.state.scale * delta), 50);
                 this.state.lastDist = dist;
             } else if (this.state.isDragging) {
                 const deltaX = e.touches[0].pageX - this.state.lastX;
                 const deltaY = e.touches[0].pageY - this.state.lastY;
                 
-                // Allow panning only if zoomed in
-                if (this.state.scale > 1) {
-                    this.state.x += deltaX;
-                    this.state.y += deltaY;
-                }
+                this.state.x += deltaX;
+                this.state.y += deltaY;
                 
                 this.state.lastX = e.touches[0].pageX;
                 this.state.lastY = e.touches[0].pageY;
             }
-            this.updateTransform(img);
+            this.updateTransform();
         }, { passive: false });
 
         viewer.addEventListener('touchend', () => {
@@ -181,11 +210,13 @@ const GalleryUI = {
         });
     },
 
-    updateTransform(img) {
-        img.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
+    updateTransform() {
+        if (!this.target) return;
+        this.target.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
     },
 
     closeFull() {
         document.getElementById('full-viewer').style.display = 'none';
+        this.target = null;
     }
 };
