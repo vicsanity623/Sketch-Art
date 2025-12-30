@@ -1,6 +1,5 @@
 /**
  * Visionary Gallery System
- * Uses IndexedDB for persistent storage of high-res art
  */
 
 const GalleryDB = {
@@ -56,15 +55,26 @@ const GalleryDB = {
     }
 };
 
-// UI Controller for the Gallery
 const GalleryUI = {
+    // Zoom/Pan State
+    state: {
+        scale: 1,
+        x: 0,
+        y: 0,
+        lastDist: 0,
+        lastX: 0,
+        lastY: 0,
+        isDragging: false,
+        lastTap: 0
+    },
+
     async open() {
         const modal = document.getElementById('gallery-modal');
         const overlay = document.getElementById('export-modal-overlay');
         const grid = document.getElementById('gallery-grid');
         
         grid.innerHTML = '<p style="color:white; text-align:center; width:100%;">Loading Gallery...</p>';
-        modal.style.display = 'block';
+        modal.style.display = 'flex'; // Changed to flex for better centering
         overlay.style.display = 'block';
 
         const items = await GalleryDB.getAll();
@@ -99,8 +109,80 @@ const GalleryUI = {
     viewFull(data) {
         const viewer = document.getElementById('full-viewer');
         const img = viewer.querySelector('img');
+        
+        // Reset state
+        this.state.scale = 1;
+        this.state.x = 0;
+        this.state.y = 0;
+        
         img.src = data;
+        img.style.transform = `translate(0px, 0px) scale(1)`;
         viewer.style.display = 'flex';
+
+        // Initialize touch listeners if not already attached
+        if (!viewer.dataset.initialized) {
+            this.initTouchListeners(viewer, img);
+            viewer.dataset.initialized = "true";
+        }
+    },
+
+    initTouchListeners(viewer, img) {
+        viewer.addEventListener('touchstart', (e) => {
+            // Double tap to reset
+            const now = Date.now();
+            if (now - this.state.lastTap < 300) {
+                this.state.scale = 1; this.state.x = 0; this.state.y = 0;
+                this.updateTransform(img);
+                return;
+            }
+            this.state.lastTap = now;
+
+            if (e.touches.length === 2) {
+                this.state.lastDist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+            } else {
+                this.state.isDragging = true;
+                this.state.lastX = e.touches[0].pageX;
+                this.state.lastY = e.touches[0].pageY;
+            }
+        });
+
+        viewer.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+
+            if (e.touches.length === 2) {
+                const dist = Math.hypot(
+                    e.touches[0].pageX - e.touches[1].pageX,
+                    e.touches[0].pageY - e.touches[1].pageY
+                );
+                const delta = dist / this.state.lastDist;
+                this.state.scale = Math.min(Math.max(1, this.state.scale * delta), 10);
+                this.state.lastDist = dist;
+            } else if (this.state.isDragging) {
+                const deltaX = e.touches[0].pageX - this.state.lastX;
+                const deltaY = e.touches[0].pageY - this.state.lastY;
+                
+                // Allow panning only if zoomed in
+                if (this.state.scale > 1) {
+                    this.state.x += deltaX;
+                    this.state.y += deltaY;
+                }
+                
+                this.state.lastX = e.touches[0].pageX;
+                this.state.lastY = e.touches[0].pageY;
+            }
+            this.updateTransform(img);
+        }, { passive: false });
+
+        viewer.addEventListener('touchend', () => {
+            this.state.isDragging = false;
+        });
+    },
+
+    updateTransform(img) {
+        img.style.transform = `translate(${this.state.x}px, ${this.state.y}px) scale(${this.state.scale})`;
     },
 
     closeFull() {
