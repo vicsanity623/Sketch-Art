@@ -487,50 +487,101 @@
         if (!strokes.length) return;
         const format = document.getElementById('expFormat').value;
         const bgChoice = document.getElementById('expBG').value;
+    
+        // 1. Calculate Bounding Box (Including Shaders and Shapes)
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-        
         strokes.forEach(s => {
-            if (s.points) s.points.forEach(p => { minX = Math.min(minX, p.x); minY = Math.min(minY, p.y); maxX = Math.max(maxX, p.x); maxY = Math.max(maxY, p.y); });
-            if (s.type === 'line') { minX = Math.min(minX, s.a.x, s.b.x); minY = Math.min(minY, s.a.y, s.b.y); maxX = Math.max(maxX, s.a.x, s.b.x); maxY = Math.max(maxY, s.a.y, s.b.y); }
-            if (s.type === 'shape') { minX = Math.min(minX, s.x-s.size); minY = Math.min(minY, s.y-s.size); maxX = Math.max(maxX, s.x+s.size); maxY = Math.max(maxY, s.y+s.size); }
+            if (s.points) s.points.forEach(p => {
+                const r = s.type === 'shader' ? s.radius : (s.size || 0);
+                minX = Math.min(minX, p.x - r); minY = Math.min(minY, p.y - r);
+                maxX = Math.max(maxX, p.x + r); maxY = Math.max(maxY, p.y + r);
+            });
+            if (s.type === 'line') {
+                minX = Math.min(minX, s.a.x, s.b.x); minY = Math.min(minY, s.a.y, s.b.y);
+                maxX = Math.max(maxX, s.a.x, s.b.x); maxY = Math.max(maxY, s.a.y, s.b.y);
+            }
+            if (s.type === 'shape') {
+                minX = Math.min(minX, s.x - s.size); minY = Math.min(minY, s.y - s.size);
+                maxX = Math.max(maxX, s.x + s.size); maxY = Math.max(maxY, s.y + s.size);
+            }
         });
-
+    
         const pad = Math.max(maxX - minX, maxY - minY) * 0.05;
         minX -= pad; minY -= pad; maxX += pad; maxY += pad;
         const worldW = maxX - minX, worldH = maxY - minY;
+    
         let finalData;
-
+    
         if (format === 'vector/svg') {
-            let svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${worldW} ${worldH}" width="${worldW}" height="${worldH}">`;
-            if (bgChoice !== 'transparent') svg += `<rect x="${minX}" y="${minY}" width="${worldW}" height="${worldH}" fill="${bgChoice}"/>`;
-            svg += `<defs><filter id="brushBlur"><feGaussianBlur stdDeviation="3" /></filter></defs>`;
-            strokes.forEach(s => {
+            // --- SVG VECTOR EXPORT ---
+            let svgDefs = `<defs><filter id="brushBlur"><feGaussianBlur stdDeviation="3" /></filter>`;
+            let svgBody = "";
+    
+            strokes.forEach((s, strokeIdx) => {
                 if (s.type === 'eraser') return;
-                if (s.points) {
+    
+                // Handle Shader Export
+                if (s.type === 'shader') {
+                    const gradId = `grad-${strokeIdx}`;
+                    const corePoint = 0.5 * (1 - s.smoothness / 100);
+                    
+                    // Define a radial gradient for this specific shader stroke
+                    svgDefs += `
+                        <radialGradient id="${gradId}">
+                            <stop offset="0%" stop-color="${s.color}" />
+                            <stop offset="${corePoint * 100}%" stop-color="${s.color}" />
+                            <stop offset="100%" stop-color="${s.color}" stop-opacity="0" />
+                        </radialGradient>`;
+    
+                    // Place a circle for every point in the shader stroke
+                    s.points.forEach(p => {
+                        svgBody += `<circle cx="${p.x}" cy="${p.y}" r="${s.radius}" fill="url(#${gradId})" opacity="${s.opacity}" />`;
+                    });
+                } 
+                
+                // Handle Normal Pen/Pencil Export
+                else if (s.points && s.points.length > 1) {
                     let pathData = `M ${s.points[0].x} ${s.points[0].y} `;
                     s.points.forEach((p, i) => { if(i>0) pathData += `L ${p.x} ${p.y} `; });
                     let style = `fill="none" stroke="${s.color}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round" opacity="${s.opacity}"`;
                     if (s.type === 'pencil') style += ` stroke-dasharray="1,3"`;
                     if (s.type === 'brush') style += ` filter="url(#brushBlur)"`;
-                    svg += `<path d="${pathData}" ${style} />`;
+                    svgBody += `<path d="${pathData}" ${style} />`;
                 }
-                // Handle complex shapes and lines in SVG output if needed...
+                
+                // Handle Line/Shape Export
+                else if (s.type === 'line') {
+                    svgBody += `<line x1="${s.a.x}" y1="${s.a.y}" x2="${s.b.x}" y2="${s.b.y}" stroke="${s.color}" stroke-width="${s.thickness}" stroke-linecap="round" />`;
+                }
             });
-            svg += `</svg>`;
-            finalData = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svg)));
+    
+            svgDefs += `</defs>`;
+            let svgFull = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${minX} ${minY} ${worldW} ${worldH}" width="${worldW}" height="${worldH}">`;
+            if (bgChoice !== 'transparent') svgFull += `<rect x="${minX}" y="${minY}" width="${worldW}" height="${worldH}" fill="${bgChoice}"/>`;
+            svgFull += svgDefs + svgBody + `</svg>`;
+            
+            finalData = 'data:image/svg+xml;base64,' + btoa(unescape(encodeURIComponent(svgFull)));
         } else {
+            // --- RASTER EXPORT (PNG/JPG) ---
             const width = parseInt(document.getElementById('expWidth').value);
             const scale = width / worldW;
             const height = worldH * scale;
             const out = document.createElement('canvas');
             out.width = width; out.height = height;
             const octx = out.getContext('2d', {alpha: true});
+            
             if (bgChoice !== 'transparent') { octx.fillStyle = bgChoice; octx.fillRect(0,0,width,height); }
-            octx.save(); octx.scale(scale, scale); octx.translate(-minX, -minY);
+            octx.save(); 
+            octx.scale(scale, scale); 
+            octx.translate(-minX, -minY);
+            
+            // Use your main drawPaths function for the export canvas
             drawPaths(octx, { zoom: scale });
             octx.restore();
+            
             finalData = out.toDataURL(format);
         }
+    
         try { await GalleryDB.save(finalData, format); } catch(e) { console.error(e); }
         hideExport();
     }
