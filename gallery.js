@@ -82,18 +82,23 @@ const GalleryUI = {
             const div = document.createElement('div');
             div.className = 'gallery-item';
             
-            // Professional Format detection
+            // 1. Clean up format label (e.g. "svg+xml" becomes "SVG")
             let format = item.type.split('/')[1].toUpperCase();
-            if (format.includes('SVG')) format = 'SVG'; // Clean up SVG+XML
-            if (format === 'JPEG') format = 'JPG';
-
+            if (format.includes('SVG')) format = 'SVG';
+        
             div.innerHTML = `
                 <img src="${item.data}" onclick="GalleryUI.viewFull('${item.data}')">
-                <div class="gallery-info" style="display:flex; justify-content:space-between; align-items:center; padding: 10px; background: rgba(0,0,0,0.6); backdrop-filter: blur(5px);">
+                <div class="gallery-info" style="display:flex; justify-content:space-between; align-items:center; padding: 10px; background: rgba(0,0,0,0.7); backdrop-filter: blur(5px); position: absolute; bottom: 0; width: 100%; box-sizing: border-box;">
+                    <!-- Format Label -->
                     <span style="background: var(--accent); padding: 2px 8px; border-radius: 6px; font-weight: 900; font-size: 10px; color: #fff; letter-spacing: 1px;">${format}</span>
-                    <div style="display: flex; gap: 12px; align-items: center;">
-                        <button onclick="GalleryUI.download('${item.data}', '${item.id}', '${format.toLowerCase()}')" style="width:28px; height:28px; padding:0; background:none; border:none; font-size:18px; cursor:pointer;" title="Download to Device">⬇️</button>
-                        <button onclick="GalleryUI.remove(${item.id})" style="width:28px; height:28px; padding:0; background:none; border:none; font-size:18px; cursor:pointer;" title="Delete Artwork">🗑️</button>
+                    
+                    <!-- Button Container -->
+                    <div style="display: flex; gap: 8px; align-items: center;">
+                        <button onclick="GalleryUI.download('${item.data}', '${item.id}', '${format.toLowerCase()}')" 
+                                style="width:28px !important; height:28px !important; min-width:28px; padding:0; background:none; border:none; font-size:16px; display:flex; align-items:center; justify-content:center;">⬇️</button>
+                        
+                        <button onclick="GalleryUI.remove(${item.id})" 
+                                style="width:28px !important; height:28px !important; min-width:28px; padding:0; background:none; border:none; font-size:16px; display:flex; align-items:center; justify-content:center;">🗑️</button>
                     </div>
                 </div>
             `;
